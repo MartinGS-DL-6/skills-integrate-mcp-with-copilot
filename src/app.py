@@ -10,6 +10,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 import os
 from pathlib import Path
+from pydantic import BaseModel
+from typing import Optional, Dict, List
 
 app = FastAPI(title="Mergington High School API",
               description="API for viewing and signing up for extracurricular activities")
@@ -18,6 +20,21 @@ app = FastAPI(title="Mergington High School API",
 current_dir = Path(__file__).parent
 app.mount("/static", StaticFiles(directory=os.path.join(Path(__file__).parent,
           "static")), name="static")
+
+# Pydantic models used for validation
+
+
+class Activity(BaseModel):
+    description: str
+    schedule: str
+    max_participants: int
+
+
+class ActivityUpdate(BaseModel):
+    description: Optional[str] = None
+    schedule: Optional[str] = None
+    max_participants: Optional[int] = None
+
 
 # In-memory activity database
 activities = {
@@ -130,3 +147,40 @@ def unregister_from_activity(activity_name: str, email: str):
     # Remove student
     activity["participants"].remove(email)
     return {"message": f"Unregistered {email} from {activity_name}"}
+
+
+@app.post("/activities/{activity_name}")
+def create_activity(activity_name: str, activity: Activity):
+    """Create a new extracurricular activity (admin only)"""
+    if activity_name in activities:
+        raise HTTPException(status_code=400, detail="Activity already exists")
+
+    activities[activity_name] = activity.dict()
+    activities[activity_name]["participants"] = []
+    return activities[activity_name]
+
+
+@app.put("/activities/{activity_name}")
+def update_activity(activity_name: str, update: ActivityUpdate):
+    """Update fields of an existing activity (admin only)"""
+    if activity_name not in activities:
+        raise HTTPException(status_code=404, detail="Activity not found")
+
+    activity = activities[activity_name]
+    if update.description is not None:
+        activity["description"] = update.description
+    if update.schedule is not None:
+        activity["schedule"] = update.schedule
+    if update.max_participants is not None:
+        activity["max_participants"] = update.max_participants
+    return activity
+
+
+@app.delete("/activities/{activity_name}")
+def delete_activity(activity_name: str):
+    """Delete an extracurricular activity (admin only)"""
+    if activity_name not in activities:
+        raise HTTPException(status_code=404, detail="Activity not found")
+
+    del activities[activity_name]
+    return {"message": f"Activity '{activity_name}' deleted"}
